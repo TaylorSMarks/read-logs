@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
-# 1 - Keep it scrolled to the bottom? Maybe have an option to stop...    <<< Ok... lets test if it's working...
-#     First attempt seems to be no, but I think because it's not following...
-#     It hangs right now... ummm... we need to not hang.
-#     It'd also be nice if it started faster...
+# 1 - Keep it scrolled to the bottom? Maybe have an option to stop...
+#      Moving it to a background thread kind of worked... except it seems to only pick up stuff sparatically...
+#      I kind of wonder if I need to actually be on the main thread instead...
 # 2 - Handle docker compose logs being passed in...
 # 3 - Default behavior when nothing is passed in on stdin? Or... do nothing?
 #     Probably just run docker logs? Have to somehow pick the right thing... or pick all of them... hmm...
@@ -13,10 +12,14 @@
 
 # Requires Python 3.9 or newer... some combination of tksheet (3.8) and ET.indent (3.9) drive that requirement, I think...
 
+import fcntl
 from json import dumps, loads
 from tksheet import Sheet  # pip install tksheet
+import os
 import re
+import selectors
 import sys
+import threading
 import traceback
 import tkinter as tk
 import xml.etree.ElementTree as ET
@@ -134,14 +137,31 @@ def readLine(line):
             except:
                 pass
     except:
-        print('Failed to load: ' + line)
+        #print('Failed to load: ' + line)
+        pass
     else:
+        print('Adding... ' + line)
         addRow(parsed)
 
-while True:
-    line = sys.stdin.readline()
-    if not line:
-        break
-    readLine(line)
+# set sys.stdin non-blocking
+orig_fl = fcntl.fcntl(sys.stdin, fcntl.F_GETFL)
+fcntl.fcntl(sys.stdin, fcntl.F_SETFL, orig_fl | os.O_NONBLOCK)
+
+# register event
+m_selector = selectors.DefaultSelector()
+m_selector.register(sys.stdin, selectors.EVENT_READ, readLine)
+
+def monitorForInput():
+    while True:
+        #line = sys.stdin.readline()
+        #if not line:
+        #    break
+        #readLine(line)
+        for k, mask in m_selector.select():
+            readLine(k.fileobj.read())
+    
+thread = threading.Thread(target = monitorForInput).start()
 
 app.mainloop()
+
+thread.join()
