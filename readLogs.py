@@ -3,6 +3,7 @@
 # 1 - Keep it scrolled to the bottom? Maybe have an option to stop...    <<< Ok... lets test if it's working...
 #     First attempt seems to be no, but I think because it's not following...
 #     It hangs right now... ummm... we need to not hang.
+#     It'd also be nice if it started faster...
 # 2 - Handle docker compose logs being passed in...
 # 3 - Default behavior when nothing is passed in on stdin? Or... do nothing?
 #     Probably just run docker logs? Have to somehow pick the right thing... or pick all of them... hmm...
@@ -119,10 +120,7 @@ def addRow(row):
     app.sheet.insert_row(row = newRow, undo = False)
     app.sheet.see(row = app.sheet.get_total_rows() - 1, keep_xscroll = True)
 
-while True:
-    line = sys.stdin.readline()
-    if not line:
-        break
+def readLine(line):
     try:
         parsed = loads(line)
         rowDetails.append(parsed.copy())  # Intentionally get it before any massaging of the data is done.
@@ -139,5 +137,11 @@ while True:
         print('Failed to load: ' + line)
     else:
         addRow(parsed)
+
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    readLine(line)
 
 app.mainloop()
