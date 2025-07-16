@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 # 1 - Keep it scrolled to the bottom? Maybe have an option to stop...
-#      Moving it to a background thread kind of worked... except it seems to only pick up stuff sparatically...
-#      I kind of wonder if I need to actually be on the main thread instead...
 # 2 - Handle docker compose logs being passed in...
 # 3 - Default behavior when nothing is passed in on stdin? Or... do nothing?
 #     Probably just run docker logs? Have to somehow pick the right thing... or pick all of them... hmm...
@@ -12,19 +10,16 @@
 
 # Requires Python 3.9 or newer... some combination of tksheet (3.8) and ET.indent (3.9) drive that requirement, I think...
 
-import fcntl
+from datetime import datetime
 from json import dumps, loads
 from tksheet import Sheet  # pip install tksheet
-import os
 import re
-import selectors
 import sys
 import threading
+from time import time
 import traceback
 import tkinter as tk
 import xml.etree.ElementTree as ET
-
-selectedRow = -1
 
 def clickOnRow(event):
     if hasattr(event['selected'], 'row'):
@@ -56,17 +51,26 @@ def addLinebreaks(s):
 
 
 def selectRow(row):
-    global selectedRow
-    if selectedRow == row:
+    if selectRow.selectedRow == row:
         return
 
-    selectedRow = row
-    app.sheet.select_row(row, run_binding_func = False)
+    if row % 100 == 0:
+        print(f'{datetime.now()} {row=}')
+
+    if time() - selectRow.lastCalled < 10:
+        return
+
+    selectRow.selectedRow = row
+    #app.sheet.select_row(row, run_binding_func = False)
     app.detailSheet.total_rows(0)
     app.detailSheet.insert_rows([(item[0], addLinebreaks(item[1])) for item in rowDetails[row].items()], undo = False)
 
     # Works pretty ok as long as there are line breaks... fails if there's no line breaks.
     app.detailSheet.set_all_cell_sizes_to_text(width = 100)
+    selectRow.lastCalled = time()
+
+selectRow.selectedRow = -1
+selectRow.lastCalled = -1
 
 ok_bindings = ['single_select', 'copy', 'find', 'row_select', 'column_width_resize', 'double_click_column_resize', 'arrowkeys', 'right_click_popup_menu', 'rc_select']
 
@@ -118,10 +122,17 @@ def getData(row, column):
             return row[name]
     return ''
 
+
 def addRow(row):
     newRow = [getData(row, column) for column in app.columns]
+    shouldRedraw = time() - addRow.lastCalled >= 1
     app.sheet.insert_row(row = newRow, undo = False)
-    app.sheet.see(row = app.sheet.get_total_rows() - 1, keep_xscroll = True)
+
+    if shouldRedraw:
+        addRow.lastCalled = time()
+        app.sheet.see(row = app.sheet.get_total_rows() - 1, keep_xscroll = True)
+
+addRow.lastCalled = -1
 
 def readLine(line):
     try:
@@ -137,28 +148,19 @@ def readLine(line):
             except:
                 pass
     except:
-        #print('Failed to load: ' + line)
-        pass
+        print('Failed to load: ' + line)
     else:
-        print('Adding... ' + line)
         addRow(parsed)
-
-# set sys.stdin non-blocking
-orig_fl = fcntl.fcntl(sys.stdin, fcntl.F_GETFL)
-fcntl.fcntl(sys.stdin, fcntl.F_SETFL, orig_fl | os.O_NONBLOCK)
-
-# register event
-m_selector = selectors.DefaultSelector()
-m_selector.register(sys.stdin, selectors.EVENT_READ, readLine)
 
 def monitorForInput():
     while True:
-        #line = sys.stdin.readline()
-        #if not line:
-        #    break
-        #readLine(line)
-        for k, mask in m_selector.select():
-            readLine(k.fileobj.read())
+        try:
+            line = sys.stdin.readline()
+            if not line:
+                break
+            readLine(line)
+        except:
+            pass
     
 thread = threading.Thread(target = monitorForInput).start()
 
