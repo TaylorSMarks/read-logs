@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# 1 - Have an option to stop/resume scrolling. 
+# 1 - Give directions for installing/using.
 # 2 - Handle docker compose logs being passed in...
 # 3 - Default behavior when nothing is passed in on stdin? Or... do nothing?
 #     Probably just run docker logs? Have to somehow pick the right thing... or pick all of them... hmm...
@@ -54,20 +54,28 @@ def selectRow(row):
         return
 
     selectRow.selectedRow = row
-    app.detailSheet.total_rows(0)
-    app.detailSheet.insert_rows([(item[0], addLinebreaks(item[1])) for item in rowDetails[row].items()], undo = False)
+    app.detailSheet.set_sheet_data([(item[0], addLinebreaks(item[1])) for item in rowDetails[row].items()])
 
     # Works pretty ok as long as there are line breaks... fails if there's no line breaks.
     app.detailSheet.set_all_cell_sizes_to_text(width = 100)
 
 selectRow.selectedRow = -1
 
+followingTitle = 'Following Logs - Press F to Stop Following'
+notFollowingTitle = 'Stopped Following Logs - Press F to Resume Following'
+
+def toggleFollowing(event):
+    app.following = not app.following
+    app.title(followingTitle if app.following else notFollowingTitle)
+
 ok_bindings = ['single_select', 'copy', 'find', 'row_select', 'column_width_resize', 'double_click_column_resize', 'arrowkeys', 'right_click_popup_menu', 'rc_select']
 
 class demo(tk.Tk):
     def __init__(self, extraColumns):
         tk.Tk.__init__(self)
+        self.title(followingTitle)
         self.columns = ['timeStamp', 'level', 'thread', 'message', 'correlationId', 'endpoint', 'apiVersion', 'lang'] + extraColumns
+        self.following = True
         self.grid_columnconfigure(0, weight = 1)
         self.grid_rowconfigure(0, weight = 1)
         self.frame = tk.Frame(self)
@@ -90,6 +98,8 @@ class demo(tk.Tk):
         self.detailSheet = Sheet(self.frame, show_header = False, show_row_index = False, show_top_left = False, auto_resize_columns = 50)
         self.detailSheet.enable_bindings(*ok_bindings)
         self.detailSheet.grid(row = 0, column = 1, sticky = 'nswe')
+        self.bind_all('f', toggleFollowing)
+        self.bind_all('F', toggleFollowing)
 
         self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0")
 
@@ -121,10 +131,12 @@ def flushBuffer():
     with addRow.lock:
         copied = addRow.buffer.copy()
         if copied:
-            app.sheet.insert_rows(copied, undo = False)
+            app.sheet.insert_rows(copied, create_selections = app.following, undo = False)
             del addRow.buffer[:len(copied)]
             addRow.lastCalled = time()
-            app.sheet.see(row = app.sheet.get_total_rows() - 1, keep_xscroll = True)
+            
+            if app.following:
+                app.sheet.see(row = app.sheet.get_total_rows() - 1, keep_xscroll = True)
 
 def flushBufferPeriodically():
     while True:
