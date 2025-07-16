@@ -12,4 +12,6 @@ Run it like this:
 
 If you want to filter the logs that are showing up, use grep, ie,
 
-    docker logs a03a343b2c6e --follow | grep cd26df97-90b4-49df-b16f-61c7f9543b94 | python3 -m readLogs
+    docker logs a03a343b2c6e | grep cd26df97-90b4-49df-b16f-61c7f9543b94 | python3 -m readLogs
+
+> **NOTE** - If you're piping from a source that doesn't end (ie, `docker logs --follow`, instead of not including `--follow`) you'll want to make sure that you include the `--line-buffered` argument to `grep`.
