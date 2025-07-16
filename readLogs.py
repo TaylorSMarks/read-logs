@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-# 1 - Keep it scrolled to the bottom? Maybe have an option to stop...
-# 2 - Handle docker compose logs being passed in...
-# 3 - Default behavior when nothing is passed in on stdin? Or... do nothing?
+# 1 - Fix issue of the buffer potentially going unflushed.
+# 2 - Have an option to stop/resume scrolling. 
+# 3 - Handle docker compose logs being passed in...
+# 4 - Default behavior when nothing is passed in on stdin? Or... do nothing?
 #     Probably just run docker logs? Have to somehow pick the right thing... or pick all of them... hmm...
 #     If you opted for this, how would you chain it with grep?
 #     I think... we could say that if you have no input, gather output from all docker logs... and if not stdout.isatty(), then put the results to stdout.
-# 4 - Make the window black or something.
+# 5 - Make the window black or something.
 
 # Requires Python 3.9 or newer... some combination of tksheet (3.8) and ET.indent (3.9) drive that requirement, I think...
 
@@ -16,7 +17,7 @@ from tksheet import Sheet  # pip install tksheet
 import re
 import sys
 import threading
-from time import time
+from time import sleep, time
 import traceback
 import tkinter as tk
 import xml.etree.ElementTree as ET
@@ -57,20 +58,14 @@ def selectRow(row):
     if row % 100 == 0:
         print(f'{datetime.now()} {row=}')
 
-    if time() - selectRow.lastCalled < 10:
-        return
-
     selectRow.selectedRow = row
-    #app.sheet.select_row(row, run_binding_func = False)
     app.detailSheet.total_rows(0)
     app.detailSheet.insert_rows([(item[0], addLinebreaks(item[1])) for item in rowDetails[row].items()], undo = False)
 
     # Works pretty ok as long as there are line breaks... fails if there's no line breaks.
     app.detailSheet.set_all_cell_sizes_to_text(width = 100)
-    selectRow.lastCalled = time()
 
 selectRow.selectedRow = -1
-selectRow.lastCalled = -1
 
 ok_bindings = ['single_select', 'copy', 'find', 'row_select', 'column_width_resize', 'double_click_column_resize', 'arrowkeys', 'right_click_popup_menu', 'rc_select']
 
@@ -122,17 +117,35 @@ def getData(row, column):
             return row[name]
     return ''
 
-
 def addRow(row):
-    newRow = [getData(row, column) for column in app.columns]
-    shouldRedraw = time() - addRow.lastCalled >= 1
-    app.sheet.insert_row(row = newRow, undo = False)
+    addRow.buffer.append(tuple([getData(row, column) for column in app.columns]))
+    if time() - addRow.lastCalled >= 0.01:
+        flushBuffer()
+    # Ok... so the issue here is all these timers get made and none of them are ever cancelled...
+    # Better would actually be to just have another thread that just constantly runs this...
+    #elif not addRow.timer:
+    #    addRow.timer = threading.Timer(0.2, flushBuffer)
+    #    addRow.timer.start()
 
-    if shouldRedraw:
-        addRow.lastCalled = time()
-        app.sheet.see(row = app.sheet.get_total_rows() - 1, keep_xscroll = True)
+def flushBuffer():
+    app.sheet.insert_rows(addRow.buffer, undo = False)
+    addRow.buffer = []
+    #addRow.timer = None
+    addRow.lastCalled = time()
+    app.sheet.see(row = app.sheet.get_total_rows() - 1, keep_xscroll = True)
 
+#def flushBufferPeriodically():
+#    while True:
+#        flushBuffer()
+#        sleep(0.2)
+#
+#flushBufferTimer = threading.Timer(0.2, flushBuffer)
+#flushBufferTimer.start()
+
+addRow.buffer = []
 addRow.lastCalled = -1
+
+# So... I think we'll keep a timer... the timer will be for 0.2 seconds...
 
 def readLine(line):
     try:
@@ -162,7 +175,8 @@ def monitorForInput():
         except:
             pass
     
-thread = threading.Thread(target = monitorForInput).start()
+thread = threading.Thread(target = monitorForInput)
+thread.start()
 
 app.mainloop()
 
