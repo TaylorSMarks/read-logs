@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 
-# 1 - Fix issue of the buffer potentially going unflushed.
-# 2 - Have an option to stop/resume scrolling. 
-# 3 - Handle docker compose logs being passed in...
-# 4 - Default behavior when nothing is passed in on stdin? Or... do nothing?
+# 1 - Have an option to stop/resume scrolling. 
+# 2 - Handle docker compose logs being passed in...
+# 3 - Default behavior when nothing is passed in on stdin? Or... do nothing?
 #     Probably just run docker logs? Have to somehow pick the right thing... or pick all of them... hmm...
 #     If you opted for this, how would you chain it with grep?
 #     I think... we could say that if you have no input, gather output from all docker logs... and if not stdout.isatty(), then put the results to stdout.
-# 5 - Make the window black or something.
+# 4 - Make the window black or something.
 
 # Requires Python 3.9 or newer... some combination of tksheet (3.8) and ET.indent (3.9) drive that requirement, I think...
 
-from datetime import datetime
 from json import dumps, loads
 from tksheet import Sheet  # pip install tksheet
 import re
@@ -54,9 +52,6 @@ def addLinebreaks(s):
 def selectRow(row):
     if selectRow.selectedRow == row:
         return
-
-    if row % 100 == 0:
-        print(f'{datetime.now()} {row=}')
 
     selectRow.selectedRow = row
     app.detailSheet.total_rows(0)
@@ -121,49 +116,43 @@ def addRow(row):
     addRow.buffer.append(tuple([getData(row, column) for column in app.columns]))
     if time() - addRow.lastCalled >= 0.01:
         flushBuffer()
-    # Ok... so the issue here is all these timers get made and none of them are ever cancelled...
-    # Better would actually be to just have another thread that just constantly runs this...
-    #elif not addRow.timer:
-    #    addRow.timer = threading.Timer(0.2, flushBuffer)
-    #    addRow.timer.start()
 
 def flushBuffer():
-    app.sheet.insert_rows(addRow.buffer, undo = False)
-    addRow.buffer = []
-    #addRow.timer = None
-    addRow.lastCalled = time()
-    app.sheet.see(row = app.sheet.get_total_rows() - 1, keep_xscroll = True)
+    with addRow.lock:
+        copied = addRow.buffer.copy()
+        if copied:
+            app.sheet.insert_rows(copied, undo = False)
+            del addRow.buffer[:len(copied)]
+            addRow.lastCalled = time()
+            app.sheet.see(row = app.sheet.get_total_rows() - 1, keep_xscroll = True)
 
-#def flushBufferPeriodically():
-#    while True:
-#        flushBuffer()
-#        sleep(0.2)
-#
-#flushBufferTimer = threading.Timer(0.2, flushBuffer)
-#flushBufferTimer.start()
+def flushBufferPeriodically():
+    while True:
+        sleep(2)
+        flushBuffer()
 
+addRow.lock = threading.Lock()
 addRow.buffer = []
 addRow.lastCalled = -1
 
-# So... I think we'll keep a timer... the timer will be for 0.2 seconds...
+threading.Thread(target = flushBufferPeriodically).start()
 
 def readLine(line):
     try:
         parsed = loads(line)
-        rowDetails.append(parsed.copy())  # Intentionally get it before any massaging of the data is done.
-        for name in ['thread_name', 'thread']:
-            if name in parsed:
-                parsed[name] = parsed[name][-16:]
-        if 'detailMessage' in parsed:
-            try:
-                parsed |= parsed['detailMessage']
-                del parsed['detailMessage']
-            except:
-                pass
     except:
-        print('Failed to load: ' + line)
-    else:
-        addRow(parsed)
+        parsed = {'message': line}
+    rowDetails.append(parsed.copy())  # Intentionally get it before any massaging of the data is done.
+    for name in ['thread_name', 'thread']:
+        if name in parsed:
+            parsed[name] = parsed[name][-16:]
+    if 'detailMessage' in parsed:
+        try:
+            parsed |= parsed['detailMessage']
+            del parsed['detailMessage']
+        except:
+            pass
+    addRow(parsed)
 
 def monitorForInput():
     while True:
