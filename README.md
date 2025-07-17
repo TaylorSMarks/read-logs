@@ -1,5 +1,7 @@
 # read-logs
 
+<img width="1687" height="1077" alt="image" src="https://github.com/user-attachments/assets/9e3b7e20-852c-49ba-90da-74360c3f7ead" />
+
 Requires python 3.9 or newer.
 
 Install it like this:
@@ -30,6 +32,7 @@ If you want to filter the logs that are showing up, use `grep --line-buffered`, 
 > If it's the only thing you're running, it'll do both.
 >
 > **NOTE** - It follows the docker container's logs. By default, `grep` will buffer what it receives and only send once every 4096 bytes or when the end of stream is reached. `readLogs` won't ever send an end of stream though, so if you don't use `grep` in `--line-buffered` mode, there's a chance you won't see all (or any) of the lines you expect.
+
 
 Although it's intended mostly for use with following docker container logs, you can read from a file or something instead, ie:
 
