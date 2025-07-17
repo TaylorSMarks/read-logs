@@ -1,24 +1,48 @@
 #!/usr/bin/env python3
 
-# 1 - Give directions for installing/using.
-# 2 - Handle docker compose logs being passed in...
-# 3 - Default behavior when nothing is passed in on stdin? Or... do nothing?
-#     Probably just run docker logs? Have to somehow pick the right thing... or pick all of them... hmm...
-#     If you opted for this, how would you chain it with grep?
-#     I think... we could say that if you have no input, gather output from all docker logs... and if not stdout.isatty(), then put the results to stdout.
-# 4 - Make the window black or something.
+# Maybe someday...
+# 1 - Handle docker compose logs being passed in
+#     Eh, when I look at the output locally, it's flooded with pact-stub-server stuff of dubious value...
+# 2 - Alert that upstream might be buffering (ie, grep without --line-buffered)
 
 # Requires Python 3.9 or newer... some combination of tksheet (3.8) and ET.indent (3.9) drive that requirement, I think...
 
 from json import dumps, loads
 from tksheet import Sheet  # pip install tksheet
 import re
+import subprocess
 import sys
 import threading
 from time import sleep, time
 import traceback
 import tkinter as tk
 import xml.etree.ElementTree as ET
+
+inputs = []
+
+def dockerPs():
+    # Returns a mapping of container id -> image name
+    psOutLines = subprocess.check_output(['docker', 'ps'], text=True).split('\n')[1:-1]
+    return {line.split()[0]: line.split()[1].split('/')[1].split(':')[0] for line in psOutLines}
+
+def selectBestDockerContainer():
+    containers = dockerPs()
+    # So... now we want to run check_output on each of them... and we want the one with the most lines of json.
+    bestSoFar = list(containers.keys())[0]
+    bestLinesSoFar = 0
+    for container in containers.keys():
+        # Figure out limiting the output here...
+        linesOfJson = sum(line.startswith('{') and line.endswith('}') for line in subprocess.check_output(['docker', 'logs', '--tail', '1000', container], text=True, stderr=subprocess.STDOUT).split('\n'))
+        if linesOfJson > bestLinesSoFar:
+            bestLinesSoFar = linesOfJson
+            bestSoFar = container
+    return bestSoFar
+
+if not sys.stdin.isatty():
+    inputs.append(sys.stdin)
+else:
+    container = selectBestDockerContainer()
+    inputs.append(subprocess.Popen(['docker', 'logs', container, '--follow'], stdout=subprocess.PIPE, text=True, stderr=subprocess.STDOUT).stdout)
 
 def clickOnRow(event):
     if hasattr(event['selected'], 'row'):
@@ -82,7 +106,7 @@ class demo(tk.Tk):
         self.frame.grid_columnconfigure(0, weight = 1)
         self.frame.grid_columnconfigure(1, weight = 1)
         self.frame.grid_rowconfigure(0, weight = 1)
-        self.sheet = Sheet(self.frame)
+        self.sheet = Sheet(self.frame, theme='black')
         self.sheet.headers(self.columns)
         self.sheet.enable_bindings(*ok_bindings)
         self.sheet.bind('<<SheetSelect>>', clickOnRow)
@@ -95,7 +119,7 @@ class demo(tk.Tk):
         self.sheet.column_width(self.columns.index('apiVersion'),     30)
         self.sheet.column_width(self.columns.index('message'),       300)
         self.sheet.column_width(self.columns.index('lang'),           50)
-        self.detailSheet = Sheet(self.frame, show_header = False, show_row_index = False, show_top_left = False, auto_resize_columns = 50)
+        self.detailSheet = Sheet(self.frame, show_header = False, show_row_index = False, show_top_left = False, auto_resize_columns = 50, theme='black')
         self.detailSheet.enable_bindings(*ok_bindings)
         self.detailSheet.grid(row = 0, column = 1, sticky = 'nswe')
         self.bind_all('f', toggleFollowing)
@@ -103,7 +127,8 @@ class demo(tk.Tk):
 
         self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0")
 
-app = demo(sys.argv[1:])
+if sys.stdout.isatty():
+    app = demo(sys.argv[1:])
 
 rowDetails = []
 aliases = {
@@ -150,6 +175,10 @@ addRow.lastCalled = -1
 threading.Thread(target = flushBufferPeriodically).start()
 
 def readLine(line):
+    if not sys.stdout.isatty():
+        print(line)
+        return
+
     try:
         parsed = loads(line)
     except:
@@ -169,7 +198,7 @@ def readLine(line):
 def monitorForInput():
     while True:
         try:
-            line = sys.stdin.readline()
+            line = inputs[0].readline()
             if not line:
                 break
             readLine(line)
@@ -179,6 +208,7 @@ def monitorForInput():
 thread = threading.Thread(target = monitorForInput)
 thread.start()
 
-app.mainloop()
+if sys.stdout.isatty():
+    app.mainloop()
 
 thread.join()
