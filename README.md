@@ -1,3 +1,5 @@
+> **NOTE** - A little behind the version I demoed. Doesn't automatically pick the docker container to follow yet...
+
 # read-logs
 
 Requires python 3.9 or newer.
