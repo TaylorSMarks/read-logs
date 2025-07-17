@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='read-logs',
-    version='0.1.0',
+    version='0.2.0',
     url='https://github.com/TaylorSMarks/read-logs/',
     author='Taylor S. Marks',
     author_email='taylor@marksfam.com',
